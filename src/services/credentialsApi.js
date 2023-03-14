@@ -8,6 +8,9 @@ const credentialsApi = axios.create({
 });
 
 const credentialsByFilter = async (filter) => {
+  // console.log(
+  //   `${process.env.CREDENTIALS_API_HOST}:${process.env.CREDENTIALS_API_PORT}`
+  // );
   const response = await credentialsApi.post(`/credentialsByFilter`, filter);
 
   return response;

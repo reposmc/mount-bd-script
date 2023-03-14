@@ -4,12 +4,16 @@ const path = require("path");
 const process = require("process");
 const { authenticate } = require("@google-cloud/local-auth");
 const { google } = require("googleapis");
+const { promisify } = require("util");
+
+const writeFileAsync = promisify(filesystem.writeFile);
 
 // If modifying these scopes, delete token.json.
 const SCOPES = [
   "https://www.googleapis.com/auth/drive.metadata.readonly",
   "https://www.googleapis.com/auth/drive.file",
 ];
+
 // The file token.json stores the user's access and refresh tokens, and is
 // created automatically when the authorization flow completes for the first
 // time.
@@ -92,31 +96,58 @@ async function listFiles(authClient, q = "", pageSize = 10) {
   return files;
 }
 
-async function getFileContent(authClient, fileId = "", fileName = "") {
+/**
+ * Downloaded a file from Google Drive.
+ *
+ * @param {OAuth2Client} authClient
+ * @param {String} fileId
+ * @param {String} fileName
+ * @returns
+ */
+function getFileContent(authClient, fileId = "", fileName = "") {
   const drive = google.drive({ version: "v3", auth: authClient });
+  console.log("Downloading file: " + fileId);
 
-  // const fileId = "1u7F8kWJ1QKIfaJGUM1RI72iflX6uAmxf";
-  const dest = filesystem.createWriteStream(`./src/storage/${fileName}`);
+  return new Promise((resolve, reject) => {
+    drive.files.get(
+      {
+        fileId: fileId,
+        alt: "media",
+      },
+      { responseType: "stream" },
+      function (err, res) {
+        // console.log(res);
+        if (!res) {
+          return reject("Data not found from google drive file.");
+        }
 
-  drive.files
-    .get({ fileId, alt: "media" }, { responseType: "stream" })
-    .then((res) => {
-      //   console.log(res.data.name);
-      res.data
-        .on("end", () => {
-          console.log("Done downloading file.");
-        })
-        .on("error", (err) => {
-          console.error("Error downloading file.");
-        })
-        .on("data", (d) => {
-          d += "";
-        })
-        .pipe(dest);
-    });
+        if (err) {
+          return reject("The API returned an error: " + err);
+        }
+        let buf = [];
+
+        res.data.on("data", function (e) {
+          buf.push(e);
+        });
+
+        res.data.on("end", async function () {
+          const buffer = Buffer.concat(buf);
+
+          try {
+            // Creating backup
+            await writeFileAsync(`./src/storage/${fileName}`, buffer);
+
+            console.log("File downloaded successfully");
+          } catch (error) {
+            console.log(error);
+          }
+
+          resolve("file saved.");
+        });
+      }
+    );
+  });
 }
-
-// authorize().then(getFileContent).catch(console.error);
 
 module.exports = {
   loadSavedCredentialsIfExist,

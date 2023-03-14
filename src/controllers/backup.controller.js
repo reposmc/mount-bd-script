@@ -1,11 +1,17 @@
 const fs = require("fs");
 
 const { authorize, listFiles, getFileContent } = require("../libs/drive.js");
-const { spawn } = require("child_process");
-const axios = require("axios");
+const { execSync } = require("child_process");
 const { credentialsByFilter } = require("../services/credentialsApi.js");
 const path = require("path");
 
+/**
+ * List the files that have been backed up on Google Drive.
+ *
+ * @param {*} req
+ * @param {*} res
+ * @returns
+ */
 const getDatabases = async (req, res) => {
   try {
     const auth = await authorize();
@@ -25,33 +31,59 @@ const getDatabases = async (req, res) => {
   }
 };
 
+/**
+ * Mounts the backup file on the database server.
+ *
+ * @param {*} req
+ * @param {*} res
+ * @returns
+ */
 const mountBackup = async (req, res) => {
   try {
     const fileName = req.body.name;
     const fileId = req.body.id;
     const dbName = req.body.databaseName;
+    const dbDriver = req.body.databaseDriver;
 
     const auth = await authorize();
     const backupPath = path.join(__dirname, `../storage/${fileName}`);
 
-    // Getting the credentials of the database
-    const { data } = await credentialsByFilter({
-      database: "rentca",
-    });
-    const dbDriver = data.data[0].driver;
-
     // Downloading the backup
-    await getFileContent(auth, fileId, fileName);
+    const googleDownload = await getFileContent(auth, fileId, fileName);
+
+    if (googleDownload != "file saved.") {
+      return res.json({
+        message: `File couldn't be saved.`,
+      });
+    }
+
+    // Getting the credentials of the database
+    // console.log("Obtaining the credentials...");
+    // const { data } = await credentialsByFilter({
+    //   database: dbName,
+    // });
+
+    // if (data.data.length == 0) {
+    //   return res.status(404).json({
+    //     message: "Database name doesn't exists.",
+    //   });
+    // }
+
+    // const dbDriver = data.data[0].driver;
+    // const dbDriver = "mongodb";
 
     // Creating the command
-    const mountCommand = await createCommand(dbDriver, dbName, backupPath);
+    const mountCommand = createCommand(dbDriver, dbName, backupPath);
 
     // Mounting the backup
     executeCommand(mountCommand, backupPath);
 
-    return res.json({
-      message: "success",
-    });
+    return res.json(
+      {
+        message: `Backup successfully mounted. Please check the server.`,
+      },
+      400
+    );
   } catch (error) {
     return res.json({
       message: "fail",
@@ -61,51 +93,68 @@ const mountBackup = async (req, res) => {
   }
 };
 
+/**
+ * Creates the command to execute.
+ *
+ * @param {String} dbDriver
+ * @param {String} dbName
+ * @param {String} backupPath
+ * @returns
+ */
 const createCommand = (dbDriver, dbName, backupPath) => {
   let command = "";
 
+  let dbHost = "";
+  let dbUser = "";
+  let dbPassword = "";
+  let pathScript = "";
+
   switch (dbDriver) {
     case "mysql":
-      const dbUser = process.env.DATABASE_USER_MYSQL;
-      const dbPassword = process.env.DATABASE_USER_PASSWORD;
+      dbHost = process.env.DATABASE_HOST_MYSQL;
+      dbUser = process.env.DATABASE_USER_MYSQL;
+      dbPassword = process.env.DATABASE_PASSWORD_MYSQL;
+      pathScript = path.join(__dirname, "../scripts/mysql.bash");
 
-      command = `mysql --column-statistics=0 --u=${dbUser} --p=${dbPassword} ${dbName} < ${backupPath}`;
-      //   console.log(command);
+      command = `sh ${pathScript} ${dbHost} ${dbUser} ${dbPassword} ${dbName} ${backupPath}`;
       break;
-    case "postgres":
-      command = `PGPASSWORD=$1 pg_dump -U $2 -h $3 $4 > $5`;
+    case "postgresql":
+      dbHost = process.env.DATABASE_HOST_POSTGRES;
+      dbUser = process.env.DATABASE_USER_POSTGRES;
+      dbPassword = process.env.DATABASE_PASSWORD_POSTGRES;
+      pathScript = path.join(__dirname, "../scripts/postgresql.bash");
+
+      command = `sh ${pathScript} ${dbHost} ${dbUser} ${dbPassword} ${dbName.toLowerCase()} ${backupPath}`;
       break;
     case "mongodb":
-      command = `mongodump --host $1 --port $2 --db $3  --authenticationDatabase admin --username $4 --password $5 --gzip --archive > $6`;
+      dbHost = process.env.DATABASE_HOST_MONGODB;
+      dbUser = process.env.DATABASE_USER_MONGODB;
+      dbPassword = process.env.DATABASE_PASSWORD_MONGODB;
+      dbPort = process.env.DATABASE_PORT_MONGODB;
+      pathScript = path.join(__dirname, "../scripts/mongodb.bash");
+
+      command = `sh ${pathScript} ${dbHost} ${dbUser} ${dbPassword} ${dbName} ${backupPath} ${dbPort}`;
       break;
   }
 
   return command;
 };
 
+/**
+ * Executes the command and deletes the database file.
+ *
+ * @param {String} mountCommand
+ * @param {String} backupPath
+ */
 const executeCommand = (mountCommand, backupPath) => {
-  const exec = spawn(mountCommand);
+  // Executing the command
+  execSync(mountCommand, { stdio: "inherit" });
 
-  exec.stdout.on("data", (data) => {
-    console.log(`stdout: ${data}`);
-  });
-
-  exec.stderr.on("data", (data) => {
-    console.log(`stderr: ${data}`);
-  });
-
-  exec.on("error", (error) => {
-    console.log(`error: ${error.message}`);
-  });
-
-  exec.on("close", (code) => {
-    // Delete the backup file
-    // if (fs.existsSync(backupPath)) {
-    //   fs.unlinkSync(backupPath);
-    // }
-
-    console.log(`child process exited with code ${code}`);
-  });
+  // Delete the backup file
+  if (fs.existsSync(backupPath)) {
+    console.log("Deleting backup file");
+    fs.unlinkSync(backupPath);
+  }
 };
 
 module.exports = {
