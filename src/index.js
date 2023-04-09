@@ -20,5 +20,5 @@ app.use(routes);
 app.listen(process.env.PORT, process.env.SERVICE_NAME, async () => {
   await registerService();
 
-  console.log("Server listening on port 3001");
+  console.log("Server listening on port 3000");
 });
