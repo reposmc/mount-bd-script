@@ -57,21 +57,6 @@ const mountBackup = async (req, res) => {
       });
     }
 
-    // Getting the credentials of the database
-    // console.log("Obtaining the credentials...");
-    // const { data } = await credentialsByFilter({
-    //   database: dbName,
-    // });
-
-    // if (data.data.length == 0) {
-    //   return res.status(404).json({
-    //     message: "Database name doesn't exists.",
-    //   });
-    // }
-
-    // const dbDriver = data.data[0].driver;
-    // const dbDriver = "mongodb";
-
     // Creating the command
     const mountCommand = createCommand(dbDriver, dbName, backupPath);
 
@@ -82,14 +67,17 @@ const mountBackup = async (req, res) => {
       {
         message: `Backup successfully mounted. Please check the server.`,
       },
-      400
+      200
     );
   } catch (error) {
-    return res.json({
-      message: "fail",
-      data: [],
-      error,
-    });
+    return res.json(
+      {
+        message: "fail",
+        data: [],
+        error,
+      },
+      500
+    );
   }
 };
 
