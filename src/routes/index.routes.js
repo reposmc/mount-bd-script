@@ -6,7 +6,7 @@ const {
 
 const route = Router();
 
-router.get("/status", (req, res) => {
+route.get("/status", (req, res) => {
   res.json({ message: "Active" });
 });
 route.get("/databases", getDatabases);
